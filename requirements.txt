@@ -8,3 +8,5 @@ torch
 tqdm
 clearml
 hydra-core
+scipy
+ipython
