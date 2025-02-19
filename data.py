@@ -21,7 +21,7 @@ def get_dataset(verbose=False, path=None, splitting='temporal'):
 
     if splitting == 'temporal':
         test_timepoint = mldata['timestamp'].quantile(
-            q=0.95, interpolation='nearest'
+            q=0.90, interpolation='nearest'
         )
         test_data_ = mldata.query('timestamp >= @test_timepoint')
         if verbose:

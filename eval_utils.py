@@ -7,7 +7,7 @@ from data import data_to_sequences
 
 def get_test_scores(model, data_description, testset_, holdout_, device):
     sasrec_scores = sasrec_model_scoring(model, testset_, data_description, device)
-    downvote_seen_items(sasrec_scores, testset_, data_description)
+    #downvote_seen_items(sasrec_scores, testset_, data_description)
 
     sasrec_recs = topn_recommendations(sasrec_scores, topn=50)
     test_scores = model_evaluate(sasrec_recs, holdout_, data_description)
