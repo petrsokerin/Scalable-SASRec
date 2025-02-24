@@ -14,8 +14,8 @@ from torch.utils.data import DataLoader
 
 from model import SASRec
 from data import get_dataset, data_to_sequences, SequentialDataset
-from utils import topn_recommendations, downvote_seen_items
-from eval_utils import model_evaluate, sasrec_model_scoring, get_test_scores
+from utils import topn_recommendations, downvote_seen_items, seed_everything
+from eval_utils import model_evaluate, sasrec_model_scoring, get_test_scores, sasrec_model_effect_scoring
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="train")
@@ -33,8 +33,9 @@ def main(config):
         task.connect(OmegaConf.to_container(config))
     else:
         task = None
-        
-        
+
+    seed_everything(config.trainer_params.seed)
+
     base_config = dict(
         num_epochs = config.trainer_params.num_epochs,
         maxlen = config.model_params.maxlen,
@@ -76,7 +77,7 @@ def main(config):
                            testset_valid=testset_valid, holdout_valid=holdout_valid, device=device,
                            task=task, log=log)
 
-    test_scores = get_test_scores(model, data_description, testset_, holdout_, device)
+    test_scores = get_test_scores(model, data_description, testset_, holdout_, device, effect_test=True)
     test_scores_meta = reduce(lambda s, metric_name: s + f'\n{metric_name}:{test_scores[metric_name]:.3g}', test_scores.keys(), '')
 
     print(test_scores_meta)
@@ -123,7 +124,7 @@ def train_sasrec_epoch(model, num_batch, l2_emb, sampler, optimizer, device):
     model.train()
     pad_token = model.pad_token
     losses = []
-    for _, *seq_data in sampler:
+    for _, *seq_data in tqdm(sampler, leave=True):
         # convert batch data into torch tensors
         seq, pos, neg = (torch.tensor(np.array(x), device=device, dtype=torch.long) for x in seq_data)
         loss = model(seq, pos, neg)
@@ -137,7 +138,7 @@ def train_sasrec_epoch(model, num_batch, l2_emb, sampler, optimizer, device):
     return losses
 
 
-def build_sasrec_model(config, data, data_description, testset_valid, holdout_valid, device, task, log):
+def build_sasrec_model(config, data, data_description, testset_valid, holdout_valid, device, task, log, effect_test=True):
     '''Simple MF training routine without early stopping'''
     model, sampler, n_batches, optimizers = prepare_sasrec_model(config, data, data_description, device)
     losses = {}
@@ -162,9 +163,13 @@ def build_sasrec_model(config, data, data_description, testset_valid, holdout_va
             model, n_batches, config['l2_emb'], sampler, optimizers, device
         )
         if epoch % config['skip_epochs'] == 0:
-            val_scores = sasrec_model_scoring(model, testset_valid, data_description, device)
-            downvote_seen_items(val_scores, testset_valid, data_description)
-            val_recs = topn_recommendations(val_scores, topn=10)
+            if effect_test:
+                val_recs = sasrec_model_effect_scoring(model, testset_valid, data_description, device, topn=10)
+            else:
+                val_scores = sasrec_model_scoring(model, testset_valid, data_description, device)
+                downvote_seen_items(val_scores, testset_valid, data_description)
+                val_recs = topn_recommendations(val_scores, topn=10)
+            
             val_metrics = model_evaluate(val_recs, holdout_valid, data_description)
             metrics[epoch] = val_metrics
             ndcg_ = val_metrics['ndcg@10']
